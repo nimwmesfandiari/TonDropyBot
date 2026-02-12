@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>TON Dropy PRO</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;700&display=swap');
+
+*{box-sizing:border-box}
+
+body{
+    margin:0;
+    font-family:'Vazirmatn',sans-serif;
+    background: radial-gradient(circle at top,#0f1c2e,#070b14);
+    color:#fff;
+    padding:20px;
+}
+
+/* Glow Animation */
+@keyframes glow {
+    0%{box-shadow:0 0 10px #00c6ff}
+    50%{box-shadow:0 0 20px #0072ff}
+    100%{box-shadow:0 0 10px #00c6ff}
+}
+
+.header{
+    text-align:center;
+    margin-bottom:20px;
+}
+.header h2{
+    font-size:22px;
+    background:linear-gradient(90deg,#00c6ff,#0072ff);
+    -webkit-background-clip:text;
+    -webkit-text-fill-color:transparent;
+}
+
+.card{
+    background:rgba(255,255,255,0.05);
+    backdrop-filter:blur(20px);
+    border:1px solid rgba(255,255,255,0.08);
+    padding:18px;
+    border-radius:18px;
+    margin-bottom:15px;
+}
+
+button{
+    width:100%;
+    padding:14px;
+    border:none;
+    border-radius:14px;
+    font-size:15px;
+    font-weight:600;
+    cursor:pointer;
+    transition:0.3s;
+}
+
+.primary-btn{
+    background:linear-gradient(90deg,#00c6ff,#0072ff);
+    color:#fff;
+}
+
+.withdraw-btn{
+    background:linear-gradient(90deg,#ff512f,#dd2476);
+    color:#fff;
+}
+
+.withdraw-btn:disabled{
+    background:gray;
+    cursor:not-allowed;
+}
+
+/* Toast */
+.toast{
+    position:fixed;
+    bottom:20px;
+    right:20px;
+    background:#121b2a;
+    padding:15px 20px;
+    border-radius:12px;
+    box-shadow:0 10px 30px rgba(0,0,0,0.6);
+    opacity:0;
+    transform:translateY(20px);
+    transition:0.3s;
+    font-size:14px;
+}
+.toast.show{
+    opacity:1;
+    transform:translateY(0);
+}
+
+/* Loader */
+.loader{
+    border:4px solid rgba(255,255,255,0.2);
+    border-top:4px solid #00c6ff;
+    border-radius:50%;
+    width:25px;
+    height:25px;
+    animation:spin 1s linear infinite;
+    margin:auto;
+}
+@keyframes spin{
+    100%{transform:rotate(360deg);}
+}
+
+/* History */
+.history-item{
+    background:rgba(255,255,255,0.04);
+    padding:10px;
+    border-radius:10px;
+    margin-top:8px;
+    font-size:13px;
+}
+.pending{color:#ffc107}
+.approved{color:#4caf50}
+.rejected{color:#f44336}
+</style>
+</head>
+
+<body>
+
+<div class="header">
+<h2>⛏ TON Dropy PRO</h2>
+</div>
+
+<div class="card">
+<p>💰 موجودی: <span id="balance">12.86</span> TON</p>
+<p>⚡ قدرت استخراج: 12.4 H/s</p>
+<p>🕒 زمان: <span id="time"></span></p>
+</div>
+
+<div class="card">
+<button id="connectBtn" class="primary-btn">🔗 اتصال به کیف پول</button>
+<div id="walletBox" style="display:none;margin-top:10px;font-size:12px;">
+آدرس:
+<div id="walletAddress" style="color:#00ff9d;word-break:break-all;"></div>
+</div>
+</div>
+
+<div class="card">
+<button id="withdrawBtn" onclick="withdraw()" class="withdraw-btn">
+💸 ثبت درخواست برداشت
+</button>
+<div id="loadingBox" style="display:none;margin-top:10px;">
+<div class="loader"></div>
+</div>
+</div>
+
+<div class="card">
+<h4>📜 تاریخچه برداشت‌ها</h4>
+<div id="history"></div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const tg = window.Telegram.WebApp;
+tg.ready(); tg.expand();
+
+let userData={
+balance:12.86,
+wallet:null,
+withdrawStatus:null,
+history:[]
+};
+
+/* Clock */
+setInterval(()=>{
+document.getElementById("time").innerText=
+new Date().toLocaleTimeString("fa-IR");
+},1000);
+
+/* TON Connect */
+const tonConnectUI = new TON_CONNECT_UI.TonConnectUI({
+manifestUrl:'https://nimwmesfandiari.github.io/ton-dropy-bot/tonconnect-manifest.json',
+buttonRootId:'connectBtn'
+});
+
+tonConnectUI.onStatusChange(wallet=>{
+if(wallet){
+userData.wallet=wallet.account.address;
+document.getElementById("walletAddress").innerText=userData.wallet;
+document.getElementById("walletBox").style.display="block";
+showToast("✅ کیف پول متصل شد");
+}
+});
+
+/* Withdraw */
+function withdraw(){
+if(!userData.wallet){
+showToast("❌ ابتدا کیف پول را متصل کنید");
+return;
+}
+
+if(userData.withdrawStatus==="pending"){
+showToast("⏳ درخواست قبلی در حال بررسی است");
+return;
+}
+
+document.getElementById("withdrawBtn").disabled=true;
+document.getElementById("loadingBox").style.display="block";
+
+setTimeout(()=>{
+
+userData.withdrawStatus="pending";
+addHistory("pending");
+
+document.getElementById("loadingBox").style.display="none";
+showToast("📤 درخواست برداشت ارسال شد و در انتظار تأیید است");
+
+sendToBot({
+action:"withdraw",
+wallet:userData.wallet,
+balance:userData.balance
+});
+
+},2000);
+}
+
+/* History */
+function addHistory(status){
+const historyBox=document.getElementById("history");
+const div=document.createElement("div");
+div.className="history-item "+status;
+div.innerText=`درخواست ${userData.balance} TON - ${status.toUpperCase()}`;
+historyBox.prepend(div);
+}
+
+/* Toast */
+function showToast(msg){
+const toast=document.getElementById("toast");
+toast.innerText=msg;
+toast.classList.add("show");
+setTimeout(()=>toast.classList.remove("show"),3000);
+}
+
+/* Send */
+function sendToBot(data){
+if(window.Telegram?.WebApp){
+Telegram.WebApp.sendData(JSON.stringify(data));
+}
+}
+</script>
+
+</body>
+</html>
